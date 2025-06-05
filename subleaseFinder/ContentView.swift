@@ -62,7 +62,7 @@ struct ContentView: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 withAnimation {
-                    isLoading = false
+                isLoading = false
                 }
             }
         }
@@ -76,29 +76,79 @@ struct MainTabView: View {
     var userIntent: UserIntent?
     @Binding var isAuthenticated: Bool
     @Binding var showProfileMenu: Bool
+    @State private var selectedTab = 0
+    @State private var favoriteListings: Set<UUID> = []
+    @State private var showFavorites = false
     
     var body: some View {
-        TabView {
-            ListingsFeedView(listings: sampleListings, searchText: $searchText, selectedFilter: $selectedFilter, isAuthenticated: $isAuthenticated, isPosting: $isPosting, showProfileMenu: $showProfileMenu)
-                .tabItem {
-                    Label("Listings", systemImage: "list.bullet")
-                }
+        TabView(selection: $selectedTab) {
+            ListingsFeedView(
+                listings: sampleListings,
+                searchText: $searchText,
+                selectedFilter: $selectedFilter,
+                isAuthenticated: $isAuthenticated,
+                isPosting: $isPosting,
+                showProfileMenu: $showProfileMenu,
+                favoriteListings: $favoriteListings
+            )
+            .tabItem {
+                Label("Listings", systemImage: "list.bullet")
+            }
+            .tag(0)
             
             MapListingsView(listings: sampleListings)
                 .tabItem {
                     Label("Map", systemImage: "map")
                 }
+                .tag(1)
             
-            // Placeholder view for the Profile tab
-            Text("Profile View") // This view is shown when the tab is selected
-                .tabItem {
-                    Label("Profile", systemImage: "person.crop.circle")
-                }
-                .sheet(isPresented: $showProfileMenu) { // Sheet presented when showProfileMenu is true
-                     ProfileMenu(isAuthenticated: $isAuthenticated, showProfileMenu: $showProfileMenu)
-                }
+            ProfileMenu(
+                isAuthenticated: $isAuthenticated,
+                showProfileMenu: $showProfileMenu,
+                selectedTab: $selectedTab,
+                showFavorites: $showFavorites
+            )
+            .tabItem {
+                Label("Profile", systemImage: "person.crop.circle")
+            }
+            .tag(2)
         }
-        // Remove sheets from here, they are now attached to the respective tab views
+        .sheet(isPresented: $showFavorites) {
+            NavigationView {
+                if favoriteListings.isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.gray)
+                        Text("No Favorites Yet")
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                        Text("Swipe left on listings to add them to favorites")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                } else {
+                    List(sampleListings.filter { favoriteListings.contains($0.id) }) { listing in
+                        NavigationLink(destination: SubleaseDetailView(listing: listing)) {
+                            ListingRowView(listing: listing)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                favoriteListings.remove(listing.id)
+                            } label: {
+                                Label("Remove", systemImage: "heart.slash.fill")
+                            }
+                        }
+                    }
+                    .navigationTitle("Favorites")
+                }
+            }
+        }
+        .onChange(of: showProfileMenu) { newValue in
+            if newValue {
+                selectedTab = 2 // Switch to profile tab
+            }
+        }
     }
 }
 
@@ -110,6 +160,7 @@ struct ListingsFeedView: View {
     @Binding var isAuthenticated: Bool
     @Binding var isPosting: Bool
     @Binding var showProfileMenu: Bool
+    @Binding var favoriteListings: Set<UUID>
     
     var filteredListings: [SubleaseListing] {
         listings.filter { listing in
@@ -142,7 +193,7 @@ struct ListingsFeedView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
+            VStack(spacing: 0) {
                 // Search and Filter Bar
                 HStack {
                     Image(systemName: "magnifyingglass")
@@ -162,15 +213,78 @@ struct ListingsFeedView: View {
                 }
                 .padding()
                 
-                List(filteredListings) { listing in
-                    NavigationLink(destination: SubleaseDetailView(listing: listing)) {
-                        ListingRowView(listing: listing)
+                if filteredListings.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("No listings found")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                        Text("Try adjusting your search or filters")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    .padding()
+                } else {
+                    List {
+                        Section {
+                            Text(isAuthenticated ? "Swipe left to add to favorites" : "Log in to save your favorite listings")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .listRowBackground(Color.clear)
+                                .padding(.vertical, 4)
+                        }
+                        
+                        ForEach(filteredListings) { listing in
+                NavigationLink(destination: SubleaseDetailView(listing: listing)) {
+                                ListingRowView(listing: listing)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button {
+                                    if isAuthenticated {
+                                        if favoriteListings.contains(listing.id) {
+                                            favoriteListings.remove(listing.id)
+                                        } else {
+                                            favoriteListings.insert(listing.id)
+                                        }
+                                    } else {
+                                        showProfileMenu = true
+                                    }
+                                } label: {
+                                    Label(
+                                        favoriteListings.contains(listing.id) ? "Remove" : "Favorite",
+                                        systemImage: favoriteListings.contains(listing.id) ? "heart.slash.fill" : "heart.fill"
+                                    )
+                                }
+                                .tint(.red)
+                            }
+                        }
                     }
                 }
             }
-            .navigationTitle("Sublease Finder")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Remove the ToolbarItem for the Post button
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        if isAuthenticated {
+                            isPosting = true
+                        } else {
+                            showProfileMenu = true
+                        }
+                    }) {
+                    HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Post")
+                        }
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                }
+            }
+            .sheet(isPresented: $isPosting) {
+                PostSubleaseView(isPresented: $isPosting)
             }
         }
     }
@@ -183,7 +297,7 @@ struct ListingRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: listing.imageName)
-                .resizable()
+                            .resizable()
                 .scaledToFill()
                 .frame(width: 80, height: 80)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -197,9 +311,20 @@ struct ListingRowView: View {
                     .font(.headline)
                     .lineLimit(1)
                 
-                Text(listing.location)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                // Split location into two lines
+                let locationComponents = listing.location.components(separatedBy: ", ")
+                if locationComponents.count >= 2 {
+                    Text(locationComponents[0])
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text(locationComponents[1...].joined(separator: ", "))
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text(listing.location)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
                 
                 HStack {
                     Text(listing.price)
@@ -209,10 +334,10 @@ struct ListingRowView: View {
                     
                     Spacer()
                     
-                    Text("\(listing.numberOfBedrooms) bed • \(listing.numberOfBathrooms) bath")
+                    Text("\(listing.numberOfBedrooms) bed • \(Int(listing.numberOfBathrooms)) bath")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                }
+        }
             }
         }
         .padding(.vertical, 8)
@@ -228,9 +353,9 @@ struct SubleaseDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Image
-                Image(systemName: listing.imageName)
-                    .resizable()
-                    .scaledToFit()
+            Image(systemName: listing.imageName)
+                .resizable()
+                .scaledToFit()
                     .frame(height: 200)
                     .frame(maxWidth: .infinity)
                     .background(Color.gray.opacity(0.1))
@@ -278,7 +403,7 @@ struct SubleaseDetailView: View {
                                     .cornerRadius(8)
                             }
                         }
-                        Spacer()
+            Spacer()
                     }
                 }
                 
@@ -293,9 +418,9 @@ struct SubleaseDetailView: View {
                 }
                 
                 // Contact Button
-                Button(action: {
+            Button(action: {
                     showingContactSheet = true
-                }) {
+            }) {
                     HStack {
                         Image(systemName: "envelope.fill")
                         Text("Contact Lister")
@@ -306,9 +431,9 @@ struct SubleaseDetailView: View {
                     .background(Color.blue)
                     .foregroundColor(.white)
                     .cornerRadius(10)
-                }
             }
-            .padding()
+        }
+        .padding()
         }
         .navigationTitle("Details")
         .sheet(isPresented: $showingContactSheet) {
@@ -388,8 +513,8 @@ struct ContactSheet: View {
                 
                 Button(action: {
                     if let url = URL(string: "mailto:\(email)?subject=Sublease%20Inquiry") {
-                        UIApplication.shared.open(url)
-                    }
+            UIApplication.shared.open(url)
+        }
                 }) {
                     Text("Open Email")
                         .font(.headline)
@@ -643,6 +768,8 @@ struct AvailabilityBar: View {
 struct ProfileMenu: View {
     @Binding var isAuthenticated: Bool
     @Binding var showProfileMenu: Bool
+    @Binding var selectedTab: Int
+    @Binding var showFavorites: Bool
     
     @State private var email = ""
     @State private var password = ""
@@ -652,20 +779,52 @@ struct ProfileMenu: View {
         NavigationView {
             VStack(spacing: 24) {
                 if isAuthenticated {
-                    Text("Logged in as user@example.com")
-                        .font(.headline)
-                    Button("Logout") {
-                        isAuthenticated = false
-                        showProfileMenu = false
+                    VStack(spacing: 20) {
+                        // Profile Image
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 80))
+                            .foregroundColor(.gray)
+                        
+                        // Profile Info
+                        Text("John Doe")
+                            .font(.title2)
+                            .bold()
+                        Text("john.doe@example.com")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        
+                        // Menu Items
+                        VStack(spacing: 15) {
+                            MenuItemRow(icon: "person.fill", title: "Personal Information")
+                            Button(action: {
+                                showFavorites = true
+                            }) {
+                                MenuItemRow(icon: "heart.fill", title: "Favorites")
+                            }
+                            MenuItemRow(icon: "bell.fill", title: "Notifications")
+                            MenuItemRow(icon: "gear", title: "Settings")
+                            MenuItemRow(icon: "questionmark.circle.fill", title: "Help & Support")
+                        }
+                        .padding(.top, 20)
+                        
+                        Spacer()
+                        
+                        // Logout Button
+                        Button(action: {
+                            isAuthenticated = false
+                        }) {
+                            HStack {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                Text("Logout")
+                            }
+                            .foregroundColor(.red)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(10)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    
-                    Spacer()
-                    
-                    Text("Your Saved Listings (Coming Soon)")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
+                    .padding()
                 } else {
                     VStack(spacing: 20) {
                         Image(systemName: "person.crop.circle.badge.plus")
@@ -689,7 +848,6 @@ struct ProfileMenu: View {
                         Button(isLogin ? "Login" : "Sign Up") {
                             if !email.isEmpty && !password.isEmpty {
                                 isAuthenticated = true
-                                showProfileMenu = false
                             }
                         }
                         .buttonStyle(.borderedProminent)
@@ -698,7 +856,6 @@ struct ProfileMenu: View {
                             isLogin.toggle()
                         }
                         .font(.footnote)
-                        
                     }
                     .padding()
                     .background(RoundedRectangle(cornerRadius: 15).stroke(Color.gray.opacity(0.3), lineWidth: 1))
@@ -706,11 +863,27 @@ struct ProfileMenu: View {
                 }
             }
             .navigationTitle("Profile")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { showProfileMenu = false }
-                }
-            }
         }
+    }
+}
+
+struct MenuItemRow: View {
+    let icon: String
+    let title: String
+    
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(.blue)
+                .frame(width: 30)
+            Text(title)
+                .font(.body)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14))
+                .foregroundColor(.gray)
+        }
+        .padding(.vertical, 8)
     }
 }

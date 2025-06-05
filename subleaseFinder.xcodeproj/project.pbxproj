@@ -12,7 +12,6 @@
 		085E22C22DEF757600A353C6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 085E22C12DEF757600A353C6 /* Assets.xcassets */; };
 		085E22C52DEF757600A353C6 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 085E22C42DEF757600A353C6 /* Preview Assets.xcassets */; };
 		089E461F2DEF7DB60044FFAC /* MapListingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 089E461C2DEF7DB60044FFAC /* MapListingsView.swift */; };
-		089E46202DEF7DB60044FFAC /* FavoritesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 089E461D2DEF7DB60044FFAC /* FavoritesView.swift */; };
 		089E46212DEF7DB60044FFAC /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 089E461E2DEF7DB60044FFAC /* LoadingView.swift */; };
 /* End PBXBuildFile section */
 
@@ -23,7 +22,6 @@
 		085E22C12DEF757600A353C6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		085E22C42DEF757600A353C6 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		089E461C2DEF7DB60044FFAC /* MapListingsView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = MapListingsView.swift; path = Views/MapListingsView.swift; sourceTree = "<group>"; };
-		089E461D2DEF7DB60044FFAC /* FavoritesView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = FavoritesView.swift; path = Views/FavoritesView.swift; sourceTree = "<group>"; };
 		089E461E2DEF7DB60044FFAC /* LoadingView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = LoadingView.swift; path = Views/LoadingView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -59,7 +57,6 @@
 			children = (
 				085E22BD2DEF757400A353C6 /* subleaseFinderApp.swift */,
 				085E22BF2DEF757400A353C6 /* ContentView.swift */,
-				089E461D2DEF7DB60044FFAC /* FavoritesView.swift */,
 				089E461E2DEF7DB60044FFAC /* LoadingView.swift */,
 				089E461C2DEF7DB60044FFAC /* MapListingsView.swift */,
 				085E22C12DEF757600A353C6 /* Assets.xcassets */,
@@ -146,7 +143,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				089E46202DEF7DB60044FFAC /* FavoritesView.swift in Sources */,
 				089E461F2DEF7DB60044FFAC /* MapListingsView.swift in Sources */,
 				085E22C02DEF757400A353C6 /* ContentView.swift in Sources */,
 				089E46212DEF7DB60044FFAC /* LoadingView.swift in Sources */,
