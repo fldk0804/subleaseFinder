@@ -6,689 +6,1253 @@
 //
 
 import SwiftUI
-import Foundation
 import MapKit
-import PhotosUI
-
-enum UserIntent {
-    case lookingForSublease, lookingToSublease
-}
+import Combine
 
 // MARK: - Models
-struct SubleaseListing: Identifiable {
-    let id = UUID()
+struct SubleaseListing: Identifiable, Codable, Equatable {
+    let id: String
     let title: String
-    let location: String
-    let price: String
     let description: String
-    let listerEmail: String
-    let imageName: String
-    let coordinates: CLLocationCoordinate2D
+    let price: Decimal
+    let currency: String
+    let location: String
+    let latitude: Double
+    let longitude: Double
     let startDate: Date
     let endDate: Date
-    let amenities: [String]
-    let squareFootage: Int
     let numberOfBedrooms: Int
     let numberOfBathrooms: Double
-    let propertyType: String
+    let squareFootage: Int?
+    let propertyType: PropertyType
+    let amenities: [String]
     let hasRoommates: Bool
+    let images: [String] // URLs
+    let coverImageIndex: Int
+    let listerId: String
+    let listerName: String
+    let createdAt: Date
+    let updatedAt: Date
+    let isActive: Bool
+    
+    enum PropertyType: String, Codable, CaseIterable {
+        case apartment = "apartment"
+        case house = "house"
+        case condo = "condo"
+        case studio = "studio"
+        case shared = "shared"
+    }
+    
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+    
+    var formattedPrice: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency
+        return formatter.string(from: price as NSDecimalNumber) ?? "$\(price)"
+    }
+    
+    var durationText: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return "\(formatter.string(from: startDate)) - \(formatter.string(from: endDate))"
+    }
 }
 
-// MARK: - Main View
-struct ContentView: View {
-    @State private var isLoading = true
-    @State private var searchText = ""
-    @State private var selectedFilter: FilterOption = .all
-    @State private var isAuthenticated = false
-    @State private var showAuthModal = true
-    @State private var isPosting = false
-    @State private var userIntent: UserIntent? = nil
-    @State private var showProfileMenu = false
+struct User: Codable, Equatable {
+    let id: String
+    let email: String
+    let name: String?
+    let photoURL: String?
     
-    enum FilterOption {
-        case all, available, priceLowToHigh, priceHighToLow
+    init(id: String, email: String, name: String? = nil, photoURL: String? = nil) {
+        self.id = id
+        self.email = email
+        self.name = name
+        self.photoURL = photoURL
     }
+}
+
+// MARK: - Sample Data
+struct SampleData {
+    static let listings: [SubleaseListing] = [
+        SubleaseListing(
+            id: "1",
+            title: "Modern 2BR Apartment in Downtown",
+            description: "Beautiful modern apartment with stunning city views. Recently renovated with high-end appliances and amenities.",
+            price: 2800,
+            currency: "USD",
+            location: "San Francisco, CA",
+            latitude: 37.7749,
+            longitude: -122.4194,
+            startDate: Date(),
+            endDate: Calendar.current.date(byAdding: .month, value: 6, to: Date()) ?? Date(),
+            numberOfBedrooms: 2,
+            numberOfBathrooms: 2.0,
+            squareFootage: 1200,
+            propertyType: .apartment,
+            amenities: ["Gym", "Pool", "Parking", "Balcony"],
+            hasRoommates: false,
+            images: [
+                "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800",
+                "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800"
+            ],
+            coverImageIndex: 0,
+            listerId: "user1",
+            listerName: "Sarah Johnson",
+            createdAt: Date(),
+            updatedAt: Date(),
+            isActive: true
+        ),
+        SubleaseListing(
+            id: "2",
+            title: "Cozy Studio Near UC Berkeley",
+            description: "Perfect for students! Walking distance to campus with all utilities included.",
+            price: 1800,
+            currency: "USD",
+            location: "Berkeley, CA",
+            latitude: 37.8716,
+            longitude: -122.2727,
+            startDate: Date(),
+            endDate: Calendar.current.date(byAdding: .month, value: 4, to: Date()) ?? Date(),
+            numberOfBedrooms: 0,
+            numberOfBathrooms: 1.0,
+            squareFootage: 500,
+            propertyType: .studio,
+            amenities: ["Utilities Included", "WiFi", "Laundry"],
+            hasRoommates: false,
+            images: [
+                "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800"
+            ],
+            coverImageIndex: 0,
+            listerId: "user2",
+            listerName: "Mike Chen",
+            createdAt: Date(),
+            updatedAt: Date(),
+            isActive: true
+        ),
+        SubleaseListing(
+            id: "3",
+            title: "Luxury 3BR House in Palo Alto",
+            description: "Spacious family home with backyard and garage. Perfect for professionals.",
+            price: 4500,
+            currency: "USD",
+            location: "Palo Alto, CA",
+            latitude: 37.4419,
+            longitude: -122.1430,
+            startDate: Date(),
+            endDate: Calendar.current.date(byAdding: .month, value: 8, to: Date()) ?? Date(),
+            numberOfBedrooms: 3,
+            numberOfBathrooms: 2.5,
+            squareFootage: 2000,
+            propertyType: .house,
+            amenities: ["Backyard", "Garage", "Fireplace", "Hardwood Floors"],
+            hasRoommates: false,
+            images: [
+                "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800",
+                "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=800"
+            ],
+            coverImageIndex: 0,
+            listerId: "user3",
+            listerName: "Emily Rodriguez",
+            createdAt: Date(),
+            updatedAt: Date(),
+            isActive: true
+        ),
+        SubleaseListing(
+            id: "4",
+            title: "Shared Room in Student Housing",
+            description: "Friendly roommate wanted! Great location near Stanford campus.",
+            price: 1200,
+            currency: "USD",
+            location: "Stanford, CA",
+            latitude: 37.4275,
+            longitude: -122.1697,
+            startDate: Date(),
+            endDate: Calendar.current.date(byAdding: .month, value: 5, to: Date()) ?? Date(),
+            numberOfBedrooms: 1,
+            numberOfBathrooms: 1.0,
+            squareFootage: 800,
+            propertyType: .shared,
+            amenities: ["Kitchen", "Living Room", "WiFi", "Utilities"],
+            hasRoommates: true,
+            images: [
+                "https://images.unsplash.com/photo-1554995207-c18c203602cb?w=800"
+            ],
+            coverImageIndex: 0,
+            listerId: "user4",
+            listerName: "Alex Thompson",
+            createdAt: Date(),
+            updatedAt: Date(),
+            isActive: true
+        ),
+        SubleaseListing(
+            id: "5",
+            title: "Waterfront Condo in Sausalito",
+            description: "Stunning waterfront views! Modern condo with marina access.",
+            price: 3200,
+            currency: "USD",
+            location: "Sausalito, CA",
+            latitude: 37.8591,
+            longitude: -122.4853,
+            startDate: Date(),
+            endDate: Calendar.current.date(byAdding: .month, value: 7, to: Date()) ?? Date(),
+            numberOfBedrooms: 2,
+            numberOfBathrooms: 2.0,
+            squareFootage: 1400,
+            propertyType: .condo,
+            amenities: ["Waterfront", "Marina Access", "Gym", "Pool"],
+            hasRoommates: false,
+            images: [
+                "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800"
+            ],
+            coverImageIndex: 0,
+            listerId: "user5",
+            listerName: "David Kim",
+            createdAt: Date(),
+            updatedAt: Date(),
+            isActive: true
+        ),
+        SubleaseListing(
+            id: "6",
+            title: "Tech Hub Apartment in Mountain View",
+            description: "Perfect for tech professionals! Walking distance to major companies.",
+            price: 2600,
+            currency: "USD",
+            location: "Mountain View, CA",
+            latitude: 37.3861,
+            longitude: -122.0839,
+            startDate: Date(),
+            endDate: Calendar.current.date(byAdding: .month, value: 6, to: Date()) ?? Date(),
+            numberOfBedrooms: 1,
+            numberOfBathrooms: 1.0,
+            squareFootage: 900,
+            propertyType: .apartment,
+            amenities: ["Tech Hub", "Shuttle Service", "Gym", "Rooftop Deck"],
+            hasRoommates: false,
+            images: [
+                "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800"
+            ],
+            coverImageIndex: 0,
+            listerId: "user6",
+            listerName: "Lisa Wang",
+            createdAt: Date(),
+            updatedAt: Date(),
+            isActive: true
+        )
+    ]
+}
+
+// MARK: - Services
+protocol AuthServiceProtocol: ObservableObject {
+    var isAuthenticated: Bool { get }
+    var currentUser: User? { get }
+    func signInAnonymously() async throws -> User
+    func signInWithEmail(email: String, password: String) async throws -> User
+    func signUp(email: String, password: String) async throws -> User
+    func signOut() async throws
+}
+
+class AuthService: AuthServiceProtocol {
+    @Published var isAuthenticated = false
+    @Published var currentUser: User?
+    
+    func signInAnonymously() async throws -> User {
+        let user = User(id: "guest", email: "guest@example.com", name: "Guest User")
+        await MainActor.run {
+            self.currentUser = user
+            self.isAuthenticated = true
+        }
+        return user
+    }
+    
+    func signInWithEmail(email: String, password: String) async throws -> User {
+        let user = User(id: "user", email: email, name: email.components(separatedBy: "@").first)
+        await MainActor.run {
+            self.currentUser = user
+            self.isAuthenticated = true
+        }
+        return user
+    }
+    
+    func signUp(email: String, password: String) async throws -> User {
+        let user = User(id: "newuser", email: email, name: email.components(separatedBy: "@").first)
+        await MainActor.run {
+            self.currentUser = user
+            self.isAuthenticated = true
+        }
+        return user
+    }
+    
+    func signOut() async throws {
+        await MainActor.run {
+            self.currentUser = nil
+            self.isAuthenticated = false
+        }
+    }
+}
+
+protocol ListingServiceProtocol: ObservableObject {
+    var listings: [SubleaseListing] { get }
+    func fetchListings() async throws -> [SubleaseListing]
+    func toggleFavorite(_ listing: SubleaseListing) async throws
+}
+
+class ListingService: ListingServiceProtocol {
+    @Published var listings: [SubleaseListing] = []
+    
+    func fetchListings() async throws -> [SubleaseListing] {
+        // Simulate network delay
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        await MainActor.run {
+            self.listings = SampleData.listings
+        }
+        return SampleData.listings
+    }
+    
+    func toggleFavorite(_ listing: SubleaseListing) async throws {
+        // Mock implementation
+        print("Toggled favorite for listing: \(listing.title)")
+    }
+}
+
+// MARK: - App Flow
+class AppFlow: ObservableObject {
+    @Published var selectedTab: Int = 0
+    @Published var showAuthModal = false
+    @Published var isLoading = true
+    
+    let authService: AuthService
+    let listingService: ListingService
+    
+    init() {
+        self.authService = AuthService()
+        self.listingService = ListingService()
+        
+        // Simulate initial loading
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation {
+                self.isLoading = false
+            }
+            
+            if !self.authService.isAuthenticated {
+                self.showAuthModal = true
+            }
+        }
+        
+        // Load sample data
+        Task {
+            do {
+                _ = try await self.listingService.fetchListings()
+            } catch {
+                print("Error loading listings: \(error)")
+            }
+        }
+    }
+}
+
+// MARK: - Main Content View
+struct ContentView: View {
+    @StateObject private var appFlow = AppFlow()
     
     var body: some View {
         Group {
-            if isLoading {
+            if appFlow.isLoading {
                 LoadingView()
-            } else if showAuthModal {
-                UserIntentModal(userIntent: $userIntent, showModal: $showAuthModal)
+            } else if appFlow.showAuthModal {
+                AuthModalView(appFlow: appFlow)
             } else {
-                MainTabView(searchText: $searchText, selectedFilter: $selectedFilter, isPosting: $isPosting, userIntent: userIntent, isAuthenticated: $isAuthenticated, showProfileMenu: $showProfileMenu)
+                MainTabView(appFlow: appFlow)
             }
         }
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                withAnimation {
-                isLoading = false
-                }
-            }
-        }
+        .environmentObject(appFlow)
     }
 }
 
+// LoadingView is defined in Views/LoadingView.swift
+
+// MARK: - Main Tab View
 struct MainTabView: View {
-    @Binding var searchText: String
-    @Binding var selectedFilter: ContentView.FilterOption
-    @Binding var isPosting: Bool
-    var userIntent: UserIntent?
-    @Binding var isAuthenticated: Bool
-    @Binding var showProfileMenu: Bool
-    @State private var selectedTab = 0
-    @State private var favoriteListings: Set<UUID> = []
-    @State private var showFavorites = false
+    @ObservedObject var appFlow: AppFlow
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            ListingsFeedView(
-                listings: sampleListings,
-                searchText: $searchText,
-                selectedFilter: $selectedFilter,
-                isAuthenticated: $isAuthenticated,
-                isPosting: $isPosting,
-                showProfileMenu: $showProfileMenu,
-                favoriteListings: $favoriteListings
-            )
-            .tabItem {
-                Label("Listings", systemImage: "list.bullet")
-            }
-            .tag(0)
-            
-            MapListingsView(listings: sampleListings)
+        TabView(selection: $appFlow.selectedTab) {
+            BrowseView()
+                .environmentObject(appFlow.listingService)
                 .tabItem {
-                    Label("Map", systemImage: "map")
+                    Label("Browse", systemImage: "list.bullet")
+                }
+                .tag(0)
+            
+            PostView()
+                .environmentObject(appFlow.authService)
+                .tabItem {
+                    Label("Post", systemImage: "plus.circle")
                 }
                 .tag(1)
             
-            ProfileMenu(
-                isAuthenticated: $isAuthenticated,
-                showProfileMenu: $showProfileMenu,
-                selectedTab: $selectedTab,
-                showFavorites: $showFavorites
-            )
-            .tabItem {
-                Label("Profile", systemImage: "person.crop.circle")
-            }
-            .tag(2)
-        }
-        .sheet(isPresented: $showFavorites) {
-            NavigationView {
-                if favoriteListings.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        Text("No Favorites Yet")
-                            .font(.title2)
-                            .foregroundColor(.gray)
-                        Text("Swipe left on listings to add them to favorites")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                } else {
-                    List(sampleListings.filter { favoriteListings.contains($0.id) }) { listing in
-                        NavigationLink(destination: SubleaseDetailView(listing: listing)) {
-                            ListingRowView(listing: listing)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                favoriteListings.remove(listing.id)
-                            } label: {
-                                Label("Remove", systemImage: "heart.slash.fill")
-                            }
-                        }
-                    }
-                    .navigationTitle("Favorites")
+            SavedView()
+                .environmentObject(appFlow.listingService)
+                .tabItem {
+                    Label("Saved", systemImage: "heart")
                 }
-            }
+                .tag(2)
+            
+            ProfileView()
+                .environmentObject(appFlow.authService)
+                .tabItem {
+                    Label("Profile", systemImage: "person")
+                }
+                .tag(3)
         }
-        .onChange(of: showProfileMenu) { newValue in
-            if newValue {
-                selectedTab = 2 // Switch to profile tab
-            }
-        }
+        .accentColor(.blue)
     }
 }
 
-// MARK: - Listings Feed View
-struct ListingsFeedView: View {
-    let listings: [SubleaseListing]
-    @Binding var searchText: String
-    @Binding var selectedFilter: ContentView.FilterOption
-    @Binding var isAuthenticated: Bool
-    @Binding var isPosting: Bool
-    @Binding var showProfileMenu: Bool
-    @Binding var favoriteListings: Set<UUID>
+// MARK: - Browse View (Improved)
+struct BrowseView: View {
+    @EnvironmentObject var listingService: ListingService
+    @State private var searchText = ""
+    @State private var showFilters = false
+    @State private var viewMode: ViewMode = .list
+    @State private var selectedFilters: [String: Any] = [:]
     
-    var filteredListings: [SubleaseListing] {
-        listings.filter { listing in
-            let matchesSearch = searchText.isEmpty ||
-                listing.title.localizedCaseInsensitiveContains(searchText) ||
-                listing.location.localizedCaseInsensitiveContains(searchText)
-            
-            switch selectedFilter {
-            case .all:
-                return matchesSearch
-            case .available:
-                return matchesSearch && listing.startDate > Date()
-            case .priceLowToHigh:
-                return matchesSearch
-            case .priceHighToLow:
-                return matchesSearch
-            }
-        }
-        .sorted { first, second in
-            switch selectedFilter {
-            case .priceLowToHigh:
-                return first.price < second.price
-            case .priceHighToLow:
-                return first.price > second.price
-            default:
-                return true
-            }
-        }
+    enum ViewMode {
+        case list, map
     }
     
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Search and Filter Bar
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    TextField("Search listings...", text: $searchText)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    
-                    Menu {
-                        Button("All", action: { selectedFilter = .all })
-                        Button("Available Now", action: { selectedFilter = .available })
-                        Button("Price: Low to High", action: { selectedFilter = .priceLowToHigh })
-                        Button("Price: High to Low", action: { selectedFilter = .priceHighToLow })
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .foregroundColor(.blue)
-                    }
-                }
-                .padding()
-                
-                if filteredListings.isEmpty {
-                    VStack(spacing: 12) {
-                        Text("No listings found")
-                            .font(.headline)
-                            .foregroundColor(.gray)
-                        Text("Try adjusting your search or filters")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                    .padding()
-                } else {
-                    List {
-                        Section {
-                            Text(isAuthenticated ? "Swipe left to add to favorites" : "Log in to save your favorite listings")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .listRowBackground(Color.clear)
-                                .padding(.vertical, 4)
+                // Enhanced Header with Search (Compact)
+                VStack(spacing: 12) {
+                    // Search Bar
+                    HStack(spacing: 10) {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 14, weight: .medium))
+                            
+                            TextField("Search listings...", text: $searchText)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 14))
                         }
-                        
-                        ForEach(filteredListings) { listing in
-                NavigationLink(destination: SubleaseDetailView(listing: listing)) {
-                                ListingRowView(listing: listing)
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button {
-                                    if isAuthenticated {
-                                        if favoriteListings.contains(listing.id) {
-                                            favoriteListings.remove(listing.id)
-                                        } else {
-                                            favoriteListings.insert(listing.id)
-                                        }
-                                    } else {
-                                        showProfileMenu = true
-                                    }
-                                } label: {
-                                    Label(
-                                        favoriteListings.contains(listing.id) ? "Remove" : "Favorite",
-                                        systemImage: favoriteListings.contains(listing.id) ? "heart.slash.fill" : "heart.fill"
-                                    )
-                                }
-                                .tint(.red)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        if isAuthenticated {
-                            isPosting = true
-                        } else {
-                            showProfileMenu = true
-                        }
-                    }) {
-                    HStack {
-                            Image(systemName: "plus.circle.fill")
-                            Text("Post")
-                        }
-                        .foregroundColor(.blue)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                        
+                        Button(action: { showFilters = true }) {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.blue)
+                                .padding(8)
+                                .background(Color.blue.opacity(0.1))
+                                .cornerRadius(10)
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    
+                    // View Mode Toggle with Count
+                    HStack {
+                        // Enhanced Segmented Control
+                        HStack(spacing: 0) {
+                            Button(action: { viewMode = .list }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "list.bullet")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text("List")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundColor(viewMode == .list ? .white : .primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(viewMode == .list ? Color.blue : Color.clear)
+                                .cornerRadius(6)
+                            }
+                            
+                            Button(action: { viewMode = .map }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "map")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text("Map")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundColor(viewMode == .map ? .white : .primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(viewMode == .map ? Color.blue : Color.clear)
+                                .cornerRadius(6)
+                            }
+                        }
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                        
+                        Spacer()
+                        
+                        // Property Count
+                        Text("\(listingService.listings.count) properties")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 16)
                 }
-            }
-            .sheet(isPresented: $isPosting) {
-                PostSubleaseView(isPresented: $isPosting)
-            }
-        }
-    }
-}
-
-// MARK: - Listing Row View
-struct ListingRowView: View {
-    let listing: SubleaseListing
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: listing.imageName)
-                            .resizable()
-                .scaledToFill()
-                .frame(width: 80, height: 80)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                )
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(listing.title)
-                    .font(.headline)
-                    .lineLimit(1)
+                .padding(.vertical, 12)
+                .background(Color(.systemBackground))
                 
-                // Split location into two lines
-                let locationComponents = listing.location.components(separatedBy: ", ")
-                if locationComponents.count >= 2 {
-                    Text(locationComponents[0])
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text(locationComponents[1...].joined(separator: ", "))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                // Content
+                if viewMode == .map {
+                    MapView(listings: listingService.listings)
                 } else {
-                    Text(listing.location)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    ListView(listings: listingService.listings)
                 }
-                
-                HStack {
-                    Text(listing.price)
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
-                        .bold()
-                    
-                    Spacer()
-                    
-                    Text("\(listing.numberOfBedrooms) bed • \(Int(listing.numberOfBathrooms)) bath")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-        }
+            }
+            .navigationTitle("Browse")
+            .navigationBarTitleDisplayMode(.large)
+            .sheet(isPresented: $showFilters) {
+                FilterView(filters: $selectedFilters)
             }
         }
-        .padding(.vertical, 8)
     }
 }
 
-// MARK: - Detail View
-struct SubleaseDetailView: View {
-    let listing: SubleaseListing
-    @State private var showingContactSheet = false
+// MARK: - Enhanced List View
+struct ListView: View {
+    let listings: [SubleaseListing]
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Image
-            Image(systemName: listing.imageName)
-                .resizable()
-                .scaledToFit()
-                    .frame(height: 200)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(12)
-                
-                // Basic Info
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(listing.title)
-                        .font(.title2)
-                        .bold()
-                    
-                    Text(listing.location)
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                    
-                    Text(listing.price)
-                        .font(.title3)
-                        .foregroundColor(.blue)
-                        .bold()
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ], spacing: 12) {
+                ForEach(listings) { listing in
+                    EnhancedListingCard(listing: listing)
                 }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+}
+
+// MARK: - Enhanced Listing Card
+struct EnhancedListingCard: View {
+    let listing: SubleaseListing
+    @State private var isFavorite = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Image Section
+            ZStack(alignment: .topTrailing) {
+                AsyncImage(url: URL(string: listing.images[listing.coverImageIndex])) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Rectangle()
+                        .fill(Color(.systemGray5))
+                        .overlay(
+                            Image(systemName: "house.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.secondary)
+                        )
+                }
+                .frame(height: 120)
+                .clipped()
+                
+                // Favorite Button
+                Button(action: { isFavorite.toggle() }) {
+                    Image(systemName: isFavorite ? "heart.fill" : "heart")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(isFavorite ? .red : .white)
+                        .padding(6)
+                        .background(Color.black.opacity(0.3))
+                        .clipShape(Circle())
+                }
+                .padding(8)
+            }
+            
+            // Content Section
+            VStack(alignment: .leading, spacing: 6) {
+                // Price and Type
+                HStack {
+                    Text(listing.formattedPrice)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.blue)
+                    
+                    Spacer()
+                    
+                    Text(listing.propertyType.rawValue.capitalized)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(4)
+                }
+                
+                // Title
+                Text(listing.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(2)
+                    .foregroundColor(.primary)
                 
                 // Details
-                VStack(alignment: .leading, spacing: 16) {
-                    DetailRow(title: "Available", value: "\(listing.startDate.formatted(date: .abbreviated, time: .omitted)) - \(listing.endDate.formatted(date: .abbreviated, time: .omitted))")
-                    AvailabilityBar(startDate: listing.startDate, endDate: listing.endDate)
-                    DetailRow(title: "Bedrooms", value: "\(listing.numberOfBedrooms)")
-                    DetailRow(title: "Bathrooms", value: "\(listing.numberOfBathrooms)")
-                    DetailRow(title: "Square Footage", value: "\(listing.squareFootage) sq ft")
+                HStack(spacing: 8) {
+                    Label("\(listing.numberOfBedrooms)", systemImage: "bed.double")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    
+                    Label("\(listing.numberOfBathrooms)", systemImage: "shower")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    
+                    if let squareFootage = listing.squareFootage {
+                        Label("\(squareFootage)", systemImage: "square")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
-                // Amenities
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Amenities")
-                        .font(.headline)
-                    HStack {
-                        Spacer()
-                        FlowLayout(spacing: 8) {
-                            ForEach(listing.amenities, id: \.self) { amenity in
+                // Location
+                HStack {
+                    Image(systemName: "location")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    
+                    Text(listing.location)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                }
+                
+                // Amenities Preview (only show if space allows)
+                if !listing.amenities.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 4) {
+                            ForEach(Array(listing.amenities.prefix(2)), id: \.self) { amenity in
                                 Text(amenity)
-                                    .font(.caption)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.blue.opacity(0.1))
+                                    .font(.system(size: 8, weight: .medium))
                                     .foregroundColor(.blue)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.blue.opacity(0.1))
+                                    .cornerRadius(3)
+                            }
+                            
+                            if listing.amenities.count > 2 {
+                                Text("+\(listing.amenities.count - 2)")
+                                    .font(.system(size: 8, weight: .medium))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(10)
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+    }
+}
+
+// MARK: - Filter View
+struct FilterView: View {
+    @Binding var filters: [String: Any]
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var minPrice = ""
+    @State private var maxPrice = ""
+    @State private var selectedBedrooms = 0
+    @State private var selectedPropertyType = "All"
+    
+    let propertyTypes = ["All", "Apartment", "House", "Condo", "Studio", "Shared"]
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                // Price Range
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Price Range")
+                        .font(.system(size: 18, weight: .semibold))
+                    
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Min")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.secondary)
+                            
+                            TextField("$0", text: $minPrice)
+                                .textFieldStyle(.roundedBorder)
+                                .keyboardType(.numberPad)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Max")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.secondary)
+                            
+                            TextField("$5000", text: $maxPrice)
+                                .textFieldStyle(.roundedBorder)
+                                .keyboardType(.numberPad)
+                        }
+                    }
+                }
+                
+                // Bedrooms
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Bedrooms")
+                        .font(.system(size: 18, weight: .semibold))
+                    
+                    HStack(spacing: 8) {
+                        ForEach(0...4, id: \.self) { count in
+                            Button(action: { selectedBedrooms = count }) {
+                                Text(count == 0 ? "Studio" : "\(count)+")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(selectedBedrooms == count ? .white : .primary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(selectedBedrooms == count ? Color.blue : Color(.systemGray6))
                                     .cornerRadius(8)
                             }
                         }
-            Spacer()
                     }
                 }
                 
-                // Description
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Description")
-                        .font(.headline)
+                // Property Type
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Property Type")
+                        .font(.system(size: 18, weight: .semibold))
                     
-                    Text(listing.description)
-                        .font(.body)
-                        .foregroundColor(.secondary)
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 8) {
+                        ForEach(propertyTypes, id: \.self) { type in
+                            Button(action: { selectedPropertyType = type }) {
+                                Text(type)
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(selectedPropertyType == type ? .white : .primary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(selectedPropertyType == type ? Color.blue : Color(.systemGray6))
+                                    .cornerRadius(8)
+                            }
+                        }
+                    }
                 }
                 
-                // Contact Button
-            Button(action: {
-                    showingContactSheet = true
-            }) {
-                    HStack {
-                        Image(systemName: "envelope.fill")
-                        Text("Contact Lister")
-                    }
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+                Spacer()
+                
+                // Apply Button
+                Button("Apply Filters") {
+                    // Apply filters logic here
+                    dismiss()
+                }
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(Color.blue)
+                .cornerRadius(12)
             }
-        }
-        .padding()
-        }
-        .navigationTitle("Details")
-        .sheet(isPresented: $showingContactSheet) {
-            ContactSheet(email: listing.listerEmail)
+            .padding(20)
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button("Cancel") { dismiss() },
+                trailing: Button("Reset") {
+                    minPrice = ""
+                    maxPrice = ""
+                    selectedBedrooms = 0
+                    selectedPropertyType = "All"
+                }
+            )
         }
     }
 }
 
-// MARK: - Supporting Views
-struct DetailRow: View {
-    let title: String
-    let value: String
+// MARK: - Enhanced Map View
+struct MapView: View {
+    let listings: [SubleaseListing]
+    @State private var selectedListing: SubleaseListing?
+    @State private var region = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+        span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+    )
     
     var body: some View {
-        HStack {
-            Text(title)
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(value)
-                .bold()
-        }
-    }
-}
-
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-    
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        return layout(sizes: sizes, proposal: proposal).size
-    }
-    
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        let positions = layout(sizes: sizes, proposal: proposal).positions
-        
-        for (index, subview) in subviews.enumerated() {
-            subview.place(at: positions[index], proposal: .unspecified)
-        }
-    }
-    
-    private func layout(sizes: [CGSize], proposal: ProposedViewSize) -> (positions: [CGPoint], size: CGSize) {
-        var positions: [CGPoint] = []
-        var currentPosition = CGPoint.zero
-        var maxHeight: CGFloat = 0
-        let maxWidth = proposal.width ?? .infinity
-        
-        for size in sizes {
-            if currentPosition.x + size.width > maxWidth {
-                currentPosition.x = 0
-                currentPosition.y += maxHeight + spacing
-                maxHeight = 0
+        ZStack {
+            Map {
+                ForEach(listings) { listing in
+                    Annotation(listing.title, coordinate: listing.coordinate) {
+                        VStack(spacing: 0) {
+                            // Custom Marker
+                            ZStack {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 32, height: 32)
+                                    .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                                
+                                Image(systemName: "house.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            
+                            // Price Tag
+                            Text(listing.formattedPrice)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue)
+                                .cornerRadius(6)
+                                .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                        }
+                        .onTapGesture {
+                            selectedListing = listing
+                        }
+                    }
+                }
             }
+            .mapStyle(.standard)
             
-            positions.append(currentPosition)
-            currentPosition.x += size.width + spacing
-            maxHeight = max(maxHeight, size.height)
+            // Selected Property Card (Compact)
+            if let listing = selectedListing {
+                VStack {
+                    Spacer()
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Image
+                        AsyncImage(url: URL(string: listing.images[listing.coverImageIndex])) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            Rectangle()
+                                .fill(Color(.systemGray5))
+                        }
+                        .frame(height: 80)
+                        .clipped()
+                        .cornerRadius(8)
+                        
+                        // Details
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(listing.title)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .lineLimit(1)
+                                
+                                Spacer()
+                                
+                                Button("×") {
+                                    selectedListing = nil
+                                }
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.secondary)
+                            }
+                            
+                            Text(listing.formattedPrice)
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.blue)
+                            
+                            HStack(spacing: 8) {
+                                Label("\(listing.numberOfBedrooms)", systemImage: "bed.double")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                
+                                Label("\(listing.numberOfBathrooms)", systemImage: "shower")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                
+                                Spacer()
+                                
+                                Button("Details") {
+                                    // Navigate to details
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                }
+                .transition(.move(edge: .bottom))
+                .animation(.spring(), value: selectedListing != nil)
+            }
         }
-        
-        return (positions, CGSize(width: maxWidth, height: currentPosition.y + maxHeight))
     }
 }
 
-struct ContactSheet: View {
-    let email: String
-    @Environment(\.dismiss) var dismiss
+// MARK: - Post View
+struct PostView: View {
+    @EnvironmentObject var authService: AuthService
+    @State private var showAuthRequired = false
     
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                Text("Contact the lister")
-                    .font(.title2)
-                    .bold()
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 60))
+                    .foregroundColor(.blue)
                 
-                Text("Email: \(email)")
+                Text("Post a Sublease")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text("Create a new listing to find your perfect tenant")
                     .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
                 
-                Button(action: {
-                    if let url = URL(string: "mailto:\(email)?subject=Sublease%20Inquiry") {
-            UIApplication.shared.open(url)
+                Button("Start Creating") {
+                    if authService.isAuthenticated {
+                        // Show post wizard
+                    } else {
+                        showAuthRequired = true
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 40)
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Post")
+            .navigationBarTitleDisplayMode(.large)
+            .alert("Authentication Required", isPresented: $showAuthRequired) {
+                Button("OK") { }
+            } message: {
+                Text("Please sign in to post a listing.")
+            }
         }
-                }) {
-                    Text("Open Email")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+    }
+}
+
+// MARK: - Saved View
+struct SavedView: View {
+    @EnvironmentObject var listingService: ListingService
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                Image(systemName: "heart")
+                    .font(.system(size: 60))
+                    .foregroundColor(.red)
+                
+                Text("Saved Listings")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text("Your favorite listings will appear here")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Saved")
+            .navigationBarTitleDisplayMode(.large)
+        }
+    }
+}
+
+// MARK: - Profile View
+struct ProfileView: View {
+    @EnvironmentObject var authService: AuthService
+    @State private var showSignIn = false
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                if authService.isAuthenticated {
+                    VStack(spacing: 16) {
+                        Image(systemName: "person.circle")
+                            .font(.system(size: 80))
+                            .foregroundColor(.blue)
+                        
+                        Text(authService.currentUser?.name ?? "User")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        Text(authService.currentUser?.email ?? "")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                        
+                        Button("Sign Out") {
+                            Task {
+                                do {
+                                    try await authService.signOut()
+                                } catch {
+                                    print("Error signing out: \(error)")
+                                }
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                } else {
+                    VStack(spacing: 16) {
+                        Image(systemName: "person.circle")
+                            .font(.system(size: 80))
+                            .foregroundColor(.gray)
+                        
+                        Text("Not Signed In")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        Button("Sign In") {
+                            showSignIn = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 }
                 
                 Spacer()
             }
             .padding()
-            .navigationBarItems(trailing: Button("Done") {
-                dismiss()
-            })
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.large)
+            .sheet(isPresented: $showSignIn) {
+                SignInView()
+            }
         }
     }
 }
 
-struct AuthView: View {
-    @Binding var isAuthenticated: Bool
-    @State private var email = ""
-    @State private var password = ""
-    @State private var isLogin = true
-    var body: some View {
-        VStack(spacing: 24) {
-            Text(isLogin ? "Login" : "Sign Up")
-                .font(.largeTitle).bold()
-            TextField("Email", text: $email)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .autocapitalization(.none)
-            SecureField("Password", text: $password)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            Button(isLogin ? "Login" : "Sign Up") {
-                // Simulate authentication
-                if !email.isEmpty && !password.isEmpty {
-                    isAuthenticated = true
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            Button(isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login") {
-                isLogin.toggle()
-            }
-            .font(.footnote)
-        }
-        .padding()
-    }
-}
-
-struct UserIntentModal: View {
-    @Binding var userIntent: UserIntent?
-    @Binding var showModal: Bool
-    var body: some View {
-        VStack(spacing: 24) {
-            Text("What are you looking for?")
-                .font(.title2).bold()
-            Button("Looking for a sublease") {
-                userIntent = .lookingForSublease
-                showModal = false
-            }
-            .buttonStyle(.borderedProminent)
-            Button("Looking to sublease my room") {
-                userIntent = .lookingToSublease
-                showModal = false
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding()
-    }
-}
-
-struct PostSubleaseView: View {
-    @Binding var isPresented: Bool
-    @State private var title = ""
-    @State private var location = ""
-    @State private var price = ""
-    @State private var description = ""
-    @State private var listerEmail = ""
-    @State private var image: UIImage? = nil
-    @State private var startDate = Date()
-    @State private var endDate = Date().addingTimeInterval(60*60*24*30)
-    @State private var amenities = ""
-    @State private var squareFootage = ""
-    @State private var numberOfBedrooms = ""
-    @State private var numberOfBathrooms = ""
-    @State private var negotiable = false
-    @State private var showImagePicker = false
-    @State private var propertyType = ""
-    @State private var hasRoommates = false
+// MARK: - Auth Modal View
+struct AuthModalView: View {
+    @ObservedObject var appFlow: AppFlow
+    @State private var showSignIn = false
+    @State private var showSignUp = false
+    
     var body: some View {
         NavigationView {
-            Form {
-                Section(header: Text("Basic Info")) {
-                    TextField("Title", text: $title)
-                    TextField("Location", text: $location)
-                    TextField("Price (e.g. $1200/month)", text: $price)
-                    Toggle("Negotiable", isOn: $negotiable)
+            VStack(spacing: 30) {
+                Spacer()
+                
+                // App Logo/Title
+                VStack(spacing: 16) {
+                    Image(systemName: "house.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.blue)
+                    
+                    Text("SubleaseFinder")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("Find your perfect sublease")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
-                Section(header: Text("Details")) {
-                    TextField("Bedrooms", text: $numberOfBedrooms)
-                        .keyboardType(.numberPad)
-                    TextField("Bathrooms", text: $numberOfBathrooms)
-                        .keyboardType(.decimalPad)
-                    TextField("Square Footage", text: $squareFootage)
-                        .keyboardType(.numberPad)
-                    TextField("Amenities (comma separated)", text: $amenities)
-                }
-                Section(header: Text("Availability")) {
-                    DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
-                    DatePicker("End Date", selection: $endDate, displayedComponents: .date)
-                }
-                Section(header: Text("Description")) {
-                    TextEditor(text: $description)
-                }
-                Section(header: Text("Image")) {
-                    if let image = image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 120)
+                
+                Spacer()
+                
+                // Auth Options
+                VStack(spacing: 16) {
+                    Button("Continue as Guest") {
+                        Task {
+                            do {
+                                _ = try await appFlow.authService.signInAnonymously()
+                                // Hide the auth modal after successful guest sign in
+                                await MainActor.run {
+                                    appFlow.showAuthModal = false
+                                }
+                            } catch {
+                                print("Error signing in anonymously: \(error)")
+                            }
+                        }
                     }
-                    Button("Select Image") {
-                        showImagePicker = true
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                    
+                    Button("Sign In") {
+                        showSignIn = true
                     }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                    
+                    Button("Create Account") {
+                        showSignUp = true
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
                 }
-                Section(header: Text("Property Type")) {
-                    TextField("Property Type", text: $propertyType)
-                }
-                Section(header: Text("Roommates")) {
-                    Toggle("Has Roommates", isOn: $hasRoommates)
-                }
+                .padding(.horizontal, 40)
+                
+                Spacer()
             }
-            .navigationTitle("Post Sublease")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPresented = false }
+            .navigationBarHidden(true)
+        }
+        .sheet(isPresented: $showSignIn) {
+            SignInView()
+        }
+        .sheet(isPresented: $showSignUp) {
+            SignUpView()
+        }
+    }
+}
+
+// MARK: - Sign In View
+struct SignInView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var email = ""
+    @State private var password = ""
+    @State private var isLoading = false
+    @State private var errorMessage = ""
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                Text("Sign In")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                
+                VStack(spacing: 16) {
+                    TextField("Email", text: $email)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                    
+                    SecureField("Password", text: $password)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.password)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Post") {
-                        // Here you would save the post
-                        isPresented = false
-                    }.disabled(title.isEmpty || location.isEmpty || price.isEmpty || numberOfBedrooms.isEmpty || numberOfBathrooms.isEmpty)
+                
+                if !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
                 }
+                
+                Button("Sign In") {
+                    signIn()
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+                .disabled(email.isEmpty || password.isEmpty || isLoading)
+                
+                if isLoading {
+                    ProgressView()
+                }
+                
+                Spacer()
             }
-            .sheet(isPresented: $showImagePicker) {
-                ImagePicker(image: $image)
+            .padding()
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button("Cancel") { dismiss() }
+            )
+        }
+    }
+    
+    private func signIn() {
+        isLoading = true
+        errorMessage = ""
+        
+        Task {
+            do {
+                _ = try await AuthService().signInWithEmail(email: email, password: password)
+                await MainActor.run {
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    isLoading = false
+                }
             }
         }
     }
 }
 
-struct ImagePicker: UIViewControllerRepresentable {
-    @Binding var image: UIImage?
-    func makeUIViewController(context: Context) -> PHPickerViewController {
-        var config = PHPickerConfiguration()
-        config.filter = .images
-        let picker = PHPickerViewController(configuration: config)
-        picker.delegate = context.coordinator
-        return picker
+// MARK: - Sign Up View
+struct SignUpView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var email = ""
+    @State private var password = ""
+    @State private var confirmPassword = ""
+    @State private var isLoading = false
+    @State private var errorMessage = ""
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                Text("Create Account")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                
+                VStack(spacing: 16) {
+                    TextField("Email", text: $email)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                    
+                    SecureField("Password", text: $password)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.newPassword)
+                    
+                    SecureField("Confirm Password", text: $confirmPassword)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.newPassword)
+                }
+                
+                if !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+                
+                Button("Create Account") {
+                    signUp()
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+                .disabled(email.isEmpty || password.isEmpty || confirmPassword.isEmpty || password != confirmPassword || isLoading)
+                
+                if isLoading {
+                    ProgressView()
+                }
+                
+                Spacer()
+            }
+            .padding()
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button("Cancel") { dismiss() }
+            )
+        }
     }
-    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let parent: ImagePicker
-        init(_ parent: ImagePicker) { self.parent = parent }
-        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            picker.dismiss(animated: true)
-            guard let provider = results.first?.itemProvider, provider.canLoadObject(ofClass: UIImage.self) else { return }
-            provider.loadObject(ofClass: UIImage.self) { image, _ in
-                DispatchQueue.main.async {
-                    self.parent.image = image as? UIImage
+    
+    private func signUp() {
+        isLoading = true
+        errorMessage = ""
+        
+        Task {
+            do {
+                _ = try await AuthService().signUp(email: email, password: password)
+                await MainActor.run {
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    isLoading = false
                 }
             }
         }
@@ -696,194 +1260,8 @@ struct ImagePicker: UIViewControllerRepresentable {
 }
 
 // MARK: - Preview
-#Preview {
-    ContentView()
-}
-
-// MARK: - Sample Data
-let sampleListings = [
-    SubleaseListing(
-        title: "Sunny 1BR in Mission District",
-        location: "789 Valencia St, San Francisco, CA",
-        price: "$2,300/month",
-        description: "Bright, spacious 1-bedroom apartment with hardwood floors and a private balcony. Close to BART and great restaurants.",
-        listerEmail: "alice@example.com",
-        imageName: "house.fill",
-        coordinates: CLLocationCoordinate2D(latitude: 37.7599, longitude: -122.4212),
-        startDate: Date(),
-        endDate: Calendar.current.date(byAdding: .month, value: 3, to: Date())!,
-        amenities: ["WiFi", "Balcony", "Dishwasher", "Pet Friendly"],
-        squareFootage: 650,
-        numberOfBedrooms: 1,
-        numberOfBathrooms: 1,
-        propertyType: "Apartment",
-        hasRoommates: false
-    ),
-    SubleaseListing(
-        title: "Modern 2BR Loft near Campus",
-        location: "101 College Ave, Berkeley, CA",
-        price: "$3,100/month",
-        description: "Modern loft with 2 bedrooms, 2 baths, in-unit laundry, and secure parking. 10 min walk to campus.",
-        listerEmail: "bob@example.com",
-        imageName: "building.2.fill",
-        coordinates: CLLocationCoordinate2D(latitude: 37.8715, longitude: -122.2600),
-        startDate: Date(),
-        endDate: Calendar.current.date(byAdding: .month, value: 4, to: Date())!,
-        amenities: ["Laundry", "Parking", "Gym", "Rooftop"],
-        squareFootage: 900,
-        numberOfBedrooms: 2,
-        numberOfBathrooms: 2,
-        propertyType: "Loft",
-        hasRoommates: true
-    )
-]
-
-struct AvailabilityBar: View {
-    let startDate: Date
-    let endDate: Date
-    var body: some View {
-        let totalDays = max(Calendar.current.dateComponents([.day], from: startDate, to: endDate).day ?? 1, 1)
-        let now = Date()
-        let elapsedDays = min(max(Calendar.current.dateComponents([.day], from: startDate, to: now).day ?? 0, 0), totalDays)
-        VStack(alignment: .leading, spacing: 4) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .frame(height: 10)
-                        .foregroundColor(Color.gray.opacity(0.2))
-                    Capsule()
-                        .frame(width: geo.size.width * CGFloat(elapsedDays) / CGFloat(totalDays), height: 10)
-                        .foregroundColor(.blue)
-                }
-            }
-            .frame(height: 10)
-            Text("\(startDate.formatted(date: .abbreviated, time: .omitted)) - \(endDate.formatted(date: .abbreviated, time: .omitted))")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-struct ProfileMenu: View {
-    @Binding var isAuthenticated: Bool
-    @Binding var showProfileMenu: Bool
-    @Binding var selectedTab: Int
-    @Binding var showFavorites: Bool
-    
-    @State private var email = ""
-    @State private var password = ""
-    @State private var isLogin = true
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 24) {
-                if isAuthenticated {
-                    VStack(spacing: 20) {
-                        // Profile Image
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 80))
-                            .foregroundColor(.gray)
-                        
-                        // Profile Info
-                        Text("John Doe")
-                            .font(.title2)
-                            .bold()
-                        Text("john.doe@example.com")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                        
-                        // Menu Items
-                        VStack(spacing: 15) {
-                            MenuItemRow(icon: "person.fill", title: "Personal Information")
-                            Button(action: {
-                                showFavorites = true
-                            }) {
-                                MenuItemRow(icon: "heart.fill", title: "Favorites")
-                            }
-                            MenuItemRow(icon: "bell.fill", title: "Notifications")
-                            MenuItemRow(icon: "gear", title: "Settings")
-                            MenuItemRow(icon: "questionmark.circle.fill", title: "Help & Support")
-                        }
-                        .padding(.top, 20)
-                        
-                        Spacer()
-                        
-                        // Logout Button
-                        Button(action: {
-                            isAuthenticated = false
-                        }) {
-                            HStack {
-                                Image(systemName: "rectangle.portrait.and.arrow.right")
-                                Text("Logout")
-                            }
-                            .foregroundColor(.red)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.red.opacity(0.1))
-                            .cornerRadius(10)
-                        }
-                    }
-                    .padding()
-                } else {
-                    VStack(spacing: 20) {
-                        Image(systemName: "person.crop.circle.badge.plus")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        Text(isLogin ? "Login" : "Sign Up")
-                             .font(.title2).bold()
-                             .foregroundColor(.gray)
-                        Text("Create an account to save favorites and post your listing.")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                        
-                        TextField("Email", text: $email)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .autocapitalization(.none)
-                        SecureField("Password", text: $password)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                        
-                        Button(isLogin ? "Login" : "Sign Up") {
-                            if !email.isEmpty && !password.isEmpty {
-                                isAuthenticated = true
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        
-                        Button(isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login") {
-                            isLogin.toggle()
-                        }
-                        .font(.footnote)
-                    }
-                    .padding()
-                    .background(RoundedRectangle(cornerRadius: 15).stroke(Color.gray.opacity(0.3), lineWidth: 1))
-                    .padding()
-                }
-            }
-            .navigationTitle("Profile")
-        }
-    }
-}
-
-struct MenuItemRow: View {
-    let icon: String
-    let title: String
-    
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundColor(.blue)
-                .frame(width: 30)
-            Text(title)
-                .font(.body)
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.system(size: 14))
-                .foregroundColor(.gray)
-        }
-        .padding(.vertical, 8)
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
     }
 }

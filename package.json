@@ -1,0 +1,21 @@
+{
+  "name": "subleasefinder",
+  "version": "1.0.0",
+  "description": "A comprehensive iOS app for finding and posting sublease listings, built with SwiftUI and modern iOS development practices.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fldk0804/subleaseFinder.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/fldk0804/subleaseFinder/issues"
+  },
+  "homepage": "https://github.com/fldk0804/subleaseFinder#readme"
+}

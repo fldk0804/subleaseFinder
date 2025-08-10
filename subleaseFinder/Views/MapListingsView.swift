@@ -13,12 +13,12 @@ struct MapListingsView: View {
     var body: some View {
         Map(position: $cameraPosition) {
             ForEach(listings) { listing in
-                Annotation("$\(listing.price)", coordinate: listing.coordinates) {
+                Annotation("$\(listing.price)", coordinate: listing.coordinate) {
                 VStack {
                         Image(systemName: "house.fill")
                         .foregroundColor(.blue)
                             .font(.title2)
-                        Text(listing.price)
+                        Text("$\(listing.price)")
                         .font(.caption)
                             .padding(4)
                             .background(Color.white)
@@ -31,5 +31,5 @@ struct MapListingsView: View {
 }
 
 #Preview {
-    MapListingsView(listings: sampleListings)
+    MapListingsView(listings: SampleData.listings)
 } 
